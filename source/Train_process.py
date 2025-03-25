@@ -142,6 +142,7 @@ class TextTrainProcess:
             if epoch % self.opt.val_every_epoch == 0:
                 current_score = self.eval()
                 if self.device.type == 'mps':
+                    print("free mps memory")
                     torch.mps.empty_cache()
                 else:
                     torch.cuda.empty_cache()
@@ -161,6 +162,19 @@ class TextTrainProcess:
                 checkpoint_path = os.path.join(self.checkpoint_path, "checkpoint_epoch_{}.pth".format(epoch + 1))
                 torch.save(checkpoint, checkpoint_path)
                 print("Checkpoint saved to {}".format(checkpoint_path))
+
+                # 获取所有 checkpoint 文件并按照 epoch 排序
+                checkpoints = sorted(
+                    [f for f in os.listdir(self.checkpoint_path) if
+                     f.startswith("checkpoint_epoch_") and f.endswith(".pth")],
+                    key=lambda x: int(x.split("_")[-1].split(".")[0])  # 提取 epoch 号并排序
+                )
+
+                # 若超过 max_checkpoints，则删除最早的 checkpoint
+                if len(checkpoints) > 3:
+                    oldest_checkpoint = checkpoints[0]
+                    os.remove(os.path.join(self.checkpoint_path, oldest_checkpoint))
+                    print("Removed oldest checkpoint: {}".format(oldest_checkpoint))
 
                 if best_flag:
                     best_model_path = os.path.join(self.best_model_path, 'best_model.pth')
