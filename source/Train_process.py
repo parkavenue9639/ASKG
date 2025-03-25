@@ -25,16 +25,24 @@ class TextTrainProcess:
         self.rnn_NoamOpt = None
 
     def check_checkpoint(self):
-        if os.path.exists(os.path.join(self.checkpoint_path, 'check_point.pth')):
-            checkpoint = torch.load(self.checkpoint_path)
+        # 获取所有 checkpoint 文件
+        checkpoints = sorted(
+            [f for f in os.listdir(self.checkpoint_path) if f.startswith("checkpoint_epoch_") and f.endswith(".pth")],
+            key=lambda x: int(x.split("_")[-1].split(".")[0])  # 提取 epoch 号并排序
+        )
+
+        if checkpoints:
+            latest_checkpoint_path = os.path.join(self.checkpoint_path, checkpoints[-1])
+            checkpoint = torch.load(latest_checkpoint_path)
             self.model.load_state_dict(checkpoint['model_state'])
             self.rnn_NoamOpt.optimizer.load_state_dict(checkpoint['optimizer_state'])
             self.start_epoch = checkpoint['epoch']
             self.best_val_score = checkpoint.get('best_val_score', None)
-            print(f"Loaded checkpoint from {self.checkpoint_path}, starting from epoch {self.start_epoch}")
+            print("Loaded checkpoint from {}, starting from epoch {}".format(latest_checkpoint_path, self.start_epoch))
         else:
             self.start_epoch = 0
             self.best_val_score = None
+            print("No valid checkpoint found. Starting training from scratch.")
 
     def init_loss_func(self):
         # 主要用于二分类
