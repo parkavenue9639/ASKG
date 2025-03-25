@@ -2,6 +2,7 @@ import os
 import sys
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from tqdm import tqdm, trange
 from sklearn.metrics import accuracy_score, f1_score
 
@@ -136,8 +137,16 @@ class TextTrainProcess:
             print("Eval Loss: {} | Accuracy: {} | Macro F1: NA".format(avg_loss, accuracy))
             return accuracy
 
+    def free_cache(self):
+        if self.device.type == 'mps':
+            print("free mps memory")
+            torch.mps.empty_cache()
+        else:
+            torch.cuda.empty_cache()
+
     def train(self):
         os.makedirs(self.checkpoint_path, exist_ok=True)
+        os.makedirs(self.best_model_path, exist_ok=True)
         self.init_loss_func()
         self.check_checkpoint()
 
@@ -149,11 +158,7 @@ class TextTrainProcess:
 
             if epoch % self.opt.val_every_epoch == 0:
                 current_score = self.eval()
-                if self.device.type == 'mps':
-                    print("free mps memory")
-                    torch.mps.empty_cache()
-                else:
-                    torch.cuda.empty_cache()
+                self.free_cache()  # 释放内存
 
                 best_flag = False
                 if self.best_val_score is None or current_score > self.best_val_score:
@@ -188,3 +193,69 @@ class TextTrainProcess:
                     best_model_path = os.path.join(self.best_model_path, 'best_model.pth')
                     torch.save(self.model.state_dict(), best_model_path)
                     print("Best model saved to {}".format(best_model_path))
+        self.free_cache()
+
+
+class ImageTrain:
+    def __init__(self, device, opt, dataloader_list, model):
+        self.device = device
+        self.opt = opt
+        self.dataloader = {'train': dataloader_list[0], 'valid': dataloader_list[1], 'test': dataloader_list[2]}
+        self.model = model
+        self.best_abstract_model_path = "../best_model/abstract"
+        self.checkpoint_path = '../checkpoint/image'
+        self.start_epoch = 0
+        self.best_val_score = None
+        self.med_crit = None
+        self.outputs_crit = None
+        self.rnn_NoamOpt = None
+        self.cnn_optimizer = None
+
+    def check_abstract_model(self):
+        abstract_model_path = os.path.join(self.best_abstract_model_path, "best_model.pth")
+        if not os.path.exists(abstract_model_path):
+            print("abstract model does not exist")
+            return
+        else:
+            abstract_model = torch.load(abstract_model_path)
+            self.model.load_state_dict(abstract_model)
+            print("Loaded abstract from {}".format(abstract_model_path))
+
+    def check_checkpoint(self):
+        # 获取所有 checkpoint 文件
+        checkpoints = sorted(
+            [f for f in os.listdir(self.checkpoint_path) if f.startswith("checkpoint_epoch_") and f.endswith(".pth")],
+            key=lambda x: int(x.split("_")[-1].split(".")[0])  # 提取 epoch 号并排序
+        )
+
+        if checkpoints:
+            latest_checkpoint_path = os.path.join(self.checkpoint_path, checkpoints[-1])
+            checkpoint = torch.load(latest_checkpoint_path)
+            self.model.load_state_dict(checkpoint['model_state'])
+            self.rnn_NoamOpt.optimizer.load_state_dict(checkpoint['rnn_optimizer_state'])
+            self.cnn_optimizer.optimizer.load_state_dict(checkpoint['cnn_optimizer_state'])
+            self.start_epoch = checkpoint['epoch']
+            self.best_val_score = checkpoint.get('best_val_score', None)
+            print("Loaded checkpoint from {}, starting from epoch {}".format(latest_checkpoint_path, self.start_epoch))
+        else:
+            self.start_epoch = 0
+            self.best_val_score = None
+            print("No valid checkpoint found. Starting training from scratch.")
+
+    def init_loss_function(self):
+        # 主要用于二分类
+        self.med_crit = nn.BCELoss().to(self.device)
+        # 主要用于多分类
+        self.outputs_crit = nn.CrossEntropyLoss(ignore_index=-1).to(self.device)
+
+        self.rnn_NoamOpt = NoamOpt(self.opt.d_model, self.opt.factor, self.opt.warmup,
+                                   torch.optim.Adam(self.model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+        self.cnn_optimizer = optim.Adam(self.model.parameters(),
+                                        lr=self.opt.cnn_learning_rate, weight_decay=self.opt.weight_decay)
+
+    def train(self):
+        self.check_abstract_model()
+        self.check_checkpoint()
+
+    def image_train(self):
+        pass
