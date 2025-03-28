@@ -281,14 +281,14 @@ class ImageTrain:
 
     def decode_transformer_findings(self, idw2word, sampled_findings):
         decode_list = []
-        print("Max ID in idw2word:", max(idw2word.keys()))
+        # print("Max ID in idw2word:", max(idw2word.keys()))
         n_samples, n_words = sampled_findings.size()
         # print("n_samples: {}  n_words: {}".format(n_samples, n_words)) [16, 300]
 
         for n in range(n_samples):
             decoded = []
             words = []
-            print(sampled_findings[n])
+            # print(sampled_findings[n])
             for i in range(n_words):
                 token_id = int(sampled_findings[n][i])
                 token = self.dataset['train'].idw2word.get(token_id, '<UNK>')  # 避免 KeyError
@@ -408,8 +408,7 @@ class ImageTrain:
         self.init_loss_function()
         self.check_abstract_model()
         self.check_checkpoint()
-        if not self.best_val_score:
-            self.best_val_score = self.eval()['CIDEr']
+
         for epoch in trange(self.start_epoch, int(self.opt.max_epochs), desc="Epoch"):
             try:
                 self.image_train()
