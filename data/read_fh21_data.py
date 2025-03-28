@@ -74,17 +74,23 @@ class Fh21Dataset(Dataset):
 
     def check_data(self):
         # 查看 data 的部分内容和结构
-        print("Data 类型：", type(self.data))  # list
+        print("Fh21Dataset Data 类型：", type(self.data))  # list
         if isinstance(self.data, list):
-            print("Data 长度：", len(self.data))  # 29058
-            print("Data 示例（前 3 个元素）：", self.data[0])
+            print("Fh21Dataset Data 长度：", len(self.data))  # 29058
+            print("Fh21Dataset Data 示例（前 3 个元素）：", self.data[0])
             # id, abstracts, labels, med_terms
             # [(id, [x, x, x,...], [x, x, x,...], [med_terms]),
             #  (id, [x, x, x,...], [x, x, x,...], [med_terms]),
             #  ...]
 
         # 查看 word2idw 的部分内容和结构
-        print("word2idw 类型：", type(self.word2idw))  # dict
-        print("word2idw 示例（前 5 个词）：", dict(list(self.word2idw.items())[:5]))
+        print("Fh21Dataset word2idw 类型：", type(self.word2idw))  # dict
+        print("Fh21Dataset word2idw 长度：", len(self.word2idw))
+        print("Fh21Dataset word2idw 示例（前 5 个词）：", dict(list(self.word2idw.items())[:5]))
         #  {'<BLANK>': 0, '<BOS>': 2, '<EOS>': 3, '<UNK>': 1, '<NORMAL>': 4}
+
+        # 查看 word2idw 的部分内容和结构
+        print("Fh21Dataset idw2word 类型：", type(self.idw2word))  # dict
+        print("Fh21Dataset idw2word 长度：", len(self.idw2word))
+        print("Fh21Dataset idw2word 示例（前 5 个词）：", dict(list(self.idw2word.items())[:5]))
 

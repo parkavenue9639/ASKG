@@ -741,12 +741,12 @@ class SentenceLMHeadModel(OpenAIGPTPreTrainedModel):
         self.config = config
         self.device = device
 
-        self.tokens_embed = nn.Embedding(config.vocab_size, config.n_embd)
+        self.tokens_embed = nn.Embedding(config.vocab_size, config.n_embd)  # 将输入的token转换为n_embd维度的向量
 
-        self.encoder = SentenceEncoderModel(self.tokens_embed.weight, tag_decoder, config)
-        self.decoder = DecoderModel(self.tokens_embed.weight, config)
-        self.tag_head = TagHead(config)
-        self.lm_head = LMHead(self.decoder.tokens_embed.weight, config)
+        self.encoder = SentenceEncoderModel(self.tokens_embed.weight, tag_decoder, config)  # 句子编码器：输入token序列或图像特征，将其转换为隐藏状态
+        self.decoder = DecoderModel(self.tokens_embed.weight, config)  # 解码器，负责生成输出文本
+        self.tag_head = TagHead(config)  # 用于从隐藏状态tag_hidden_state预测标签
+        self.lm_head = LMHead(self.decoder.tokens_embed.weight, config)  # 语言建模，基于decoder生成的隐藏状态预测下一个token
         self.apply(self.init_weights)
         # self.set_num_special_tokens(config.n_special)
 
@@ -760,6 +760,7 @@ class SentenceLMHeadModel(OpenAIGPTPreTrainedModel):
 
         self.ss_prob = 0.0  # Schedule sampling probability
 
+        # 特征处理，将特征处理为d_model
         self.att_embed = nn.Sequential(nn.Linear(self.att_feat_size, self.d_model),
                                        nn.ReLU())
         self.img_att_embed = nn.Sequential(nn.Linear(self.img_feat_size, self.d_model),
@@ -792,9 +793,11 @@ class SentenceLMHeadModel(OpenAIGPTPreTrainedModel):
             # print("att_feats shape after img_att_embed: {}".format(att_feats.shape))  # [16, 49, 512]
             tag_hidden_states = self.encoder(att_feats)
             # print("tag_hidden_states shape: {}".format(tag_hidden_states.shape))  # [16, 229, 512]
-        
+
+        # 生成预测标签
         tag_logits = self.tag_head(tag_hidden_states)  # [16, 229]
         # print("tag_logits: {}".format(tag_logits.shape))
+        # 结合tag_hidden_states，生成隐藏状态
         hidden_states = self.decoder(input_ids, position_ids, token_type_ids, tag_hidden_states)
         lm_logits = self.lm_head(hidden_states)
 

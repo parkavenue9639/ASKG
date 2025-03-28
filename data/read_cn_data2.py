@@ -28,10 +28,14 @@ class CHXrayDataSet2(Dataset):
 
         with open(os.path.join(self.pkl_dir, 'word2idw.pkl'), 'rb') as f:
             self.word2idw = pkl.load(f)  # 单词到id的映射，用于文本处理
+            # print(len(self.word2idw))  1779
+            # print(self.word2idw)  {'word', id}
         f.close()
 
         with open(os.path.join(self.pkl_dir, 'idw2word.pkl'), 'rb') as f:
             self.idw2word = pkl.load(f)  # id到单词的映射，用于解码文本
+            # print(len(self.idw2word)) 1779
+            # print(self.idw2word)  {id: 'word}
         f.close()
 
         self.ids = list(self.image.keys())  # 获取所有的影像id
@@ -87,7 +91,7 @@ class CHXrayDataSet2(Dataset):
         for attr_name, attr_value in data_attrs.items():
             print(f"\nChecking {attr_name}:")
             if isinstance(attr_value, dict):
-                sample_keys = list(attr_value.keys())[:3]
+                sample_keys = list(attr_value.keys())[:5]
                 for key in sample_keys:
                     print(
                         f"  Key: {key} | Type: {type(attr_value[key])} | Length: {len(attr_value[key]) if hasattr(attr_value[key], '__len__') else 'N/A'} | Value: {attr_value[key]}")
