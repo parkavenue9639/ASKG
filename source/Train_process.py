@@ -253,10 +253,10 @@ class ImageTrain:
 
         if checkpoints:
             latest_checkpoint_path = os.path.join(self.checkpoint_path, checkpoints[-1])
-            checkpoint = torch.load(latest_checkpoint_path)
+            checkpoint = torch.load(latest_checkpoint_path, weights_only=False)
             self.model.load_state_dict(checkpoint['model_state'])
             self.rnn_NoamOpt.optimizer.load_state_dict(checkpoint['rnn_optimizer_state'])
-            self.cnn_optimizer.optimizer.load_state_dict(checkpoint['cnn_optimizer_state'])
+            self.cnn_optimizer.load_state_dict(checkpoint['cnn_optimizer_state'])
             self.cnn_model.load_state_dict(checkpoint['cnn_model_state'])
             self.aux_model.load_state_dict(checkpoint['aux_model_state'])
             self.fusion_model.load_state_dict(checkpoint['fusion_model_state'])
