@@ -32,13 +32,6 @@ class CHXrayDataSet2(Dataset):
             # print(self.word2idw)  {'word', id}
         f.close()
 
-        # 英文pkl文件直接加载
-        # with open(os.path.join(self.pkl_dir, 'idw2word.pkl'), 'rb') as f:
-            # self.idw2word = pkl.load(f)  # id到单词的映射，用于解码文本
-            # print(len(self.idw2word)) 1779
-            # print(self.idw2word)  {id: 'word}
-        # f.close()
-
         # 中文pkl文件，创建反向词典，用于将id转换为单词
         self.idw2word = {v: k for k, v in self.word2idw.items()}
 
