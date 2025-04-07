@@ -373,6 +373,7 @@ class ImageTrain:
 
                     # 打印前20个样本的预测结果，帮助观察模型效果
                     if num_show < 20:
+                        print("{} id2findings_t[ix]".format(num_show))
                         print(json.dumps(id2captions_g[ix], ensure_ascii=False))
                         # print(json.dumps(id2captions_t[ix], ensure_ascii=False))
                         num_show += 1
@@ -453,9 +454,13 @@ class ImageTrain:
                     print("Removed oldest checkpoint: {}".format(oldest_checkpoint))
 
                 if best_flag:
+                    # 同时保存最佳model和最佳cnn model
                     best_model_path = os.path.join(self.best_model_path, 'best_model.pth')
+                    best_cnn_model_path = os.path.join(self.best_model_path, 'best_cnn_model.pth')
                     torch.save(self.model.state_dict(), best_model_path)
                     print("Best model saved to {}".format(best_model_path))
+                    torch.save(self.cnn_model.state_dict(), best_cnn_model_path)
+                    print("Best cnn model saved to {}".format(best_cnn_model_path))
         self.free_cache()
 
     def binImage(self, heatmap):
