@@ -102,14 +102,14 @@ if __name__ == '__main__':
     # 创建辅助信号数据集
     text_loader_list = init_abstract_loader(dataprocessor)
 
-    # 创建训练处理类
+    # 创建外部辅助信号训练处理类
     abstract_train = TextTrainProcess(device, opt, text_loader_list, model)
     abstract_train.train()
 
     # 创建图像数据集
     image_loader_list, image_dataset_list = init_image_loader(dataprocessor)
 
-    # 创建训练处理类
+    # 创建图像特征训练处理类
     other_model = [cnn_model, aux_model, fusion_model]
     image_train = ImageTrain(device, opt, image_loader_list, image_dataset_list, model, other_model)
     image_train.train()
