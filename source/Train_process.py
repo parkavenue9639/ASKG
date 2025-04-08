@@ -10,6 +10,8 @@ from tqdm import tqdm, trange
 from skimage.measure import label
 from PIL import Image
 import torchvision.transforms as transforms
+from collections import OrderedDict
+from sklearn.metrics import roc_auc_score
 from sklearn.metrics import accuracy_score, f1_score
 
 import eval_utils
@@ -18,6 +20,47 @@ import eval_utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from pretrain.misc.utils import NoamOpt
 
+
+def modify_state_dict(state_dict):
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        if 'module.' not in k:
+            k = 'module.' + k
+        else:
+            k = k.replace('features.module.', 'module.features.')
+        new_state_dict[k] = v
+    return new_state_dict
+
+
+def compute_AUCs(gt, pred):
+    """
+        Computes Area Under the Curve (AUC) from prediction scores.
+
+    Args:
+        - gt: Float (n_samples, n_classes), true binary labels
+        - pred: Float (n_samples, n_classes),
+            can be either probability estimates of the positive class,
+            confidence values, or binary decisions.
+    Returns:
+        List of AUROCs of all classes
+    """
+    AUROCs = []
+    gt_np = gt.cpu().numpy()
+    pred_np = pred.cpu().numpy()
+    tagdecoder = {}
+    cnt = 0
+    for i in range(229):
+        try:
+            AUROCs.append(roc_auc_score(gt_np[:, i], pred_np[:, i]))
+        except ValueError:
+            pass
+        tagdecoder[cnt] = i
+        cnt += 1
+    # print(tagdecoder)
+    # with open('./tagdecoder.pkl', 'wb') as f:
+    #     pickle.dump(tagdecoder, f)
+
+    return AUROCs
 
 class TextTrainProcess:
     def __init__(self, device, opt, dataloader_list, model):
@@ -279,7 +322,7 @@ class ImageTrain:
         self.cnn_optimizer = optim.Adam(self.model.parameters(),
                                         lr=self.opt.cnn_learning_rate, weight_decay=self.opt.weight_decay)
 
-    def decode_transformer_findings(self, idw2word, sampled_findings):
+    def decode_transformer_findings(self, sampled_findings):
         decode_list = []
         # print("Max ID in idw2word:", max(idw2word.keys()))
         n_samples, n_words = sampled_findings.size()
@@ -303,17 +346,21 @@ class ImageTrain:
             decode_list.append(' '.join(decoded))
         return decode_list  # [batch_size, length]
 
+    def set_model_eval(self):
+        # 设置模型为eval模式，关闭drouptout
+        self.cnn_model.eval()  # cnn提取全局图像特征
+        self.aux_model.eval()  # 辅助模型，用于局部特征提取
+        self.fusion_model.eval()  # 融合全局和局部特征
+        self.model.eval()  # 最终模型，生成医学报告
+        return
+
     def eval(self):
         ## TODO
 
         # 创建一个进度条，用于显示评估进度。dataloader为验证集的loader
         tqdm_bar = tqdm(self.dataloader['valid'], desc="Evaluating")
 
-        # 设置模型为eval模式，关闭drouptout
-        self.cnn_model.eval()  # cnn提取全局图像特征
-        self.aux_model.eval()  # 辅助模型，用于局部特征提取
-        self.fusion_model.eval()  # 融合全局和局部特征
-        self.model.eval()  # 最终模型，生成医学报告
+        self.set_model_eval()
 
         num_show = 0  # 用于控制显示数量
 
@@ -352,8 +399,8 @@ class ImageTrain:
                     findings_seq = findings_seq[:511]
 
                 # 解码文本
-                findings_samples = self.decode_transformer_findings(self.dataset['train'].idw2word, findings_seq)
-                findings_truths = self.decode_transformer_findings(self.dataset['train'].idw2word, lm_labels)
+                findings_samples = self.decode_transformer_findings(findings_seq)
+                findings_truths = self.decode_transformer_findings(lm_labels)
                 # print("findings_samples :{}".format(findings_samples))
                 # print("findings_truths :{}".format(findings_truths))
 
@@ -481,7 +528,7 @@ class ImageTrain:
         lcc = lcc + 0
         return lcc
 
-    def Attention_gen_patchs(self, ori_image, fm_cuda, device):
+    def Attention_gen_patchs(self, ori_image, fm_cuda):
         # 基于CNN特征图提取关键区域，裁剪并返回Patch作为后续输入
         # ori_image：原始输入图像，形状为[bz, C, H, W]
         #  fm_cuda: 由CNN提取的全局特征图，形状为[BZ, NC, H, W], 其中bz：batch_size, nc:通道数（feature map数量）， h w： feature map尺寸
@@ -490,7 +537,7 @@ class ImageTrain:
         size_upsample = (224, 224)  # 目标尺寸，用于后续的图像变换
         bz, nc, h, w = feature_conv.shape  # 获取特征图的形状
 
-        patchs_cuda = torch.FloatTensor().to(device)  # 初始化，用于存储最终的patch数据
+        patchs_cuda = torch.FloatTensor().to(self.device)  # 初始化，用于存储最终的patch数据
 
         # 遍历batch_size，处理每张特征图
         for i in range(0, bz):
@@ -526,7 +573,7 @@ class ImageTrain:
             image_crop = self.preprocess(
                 Image.fromarray(image_crop.astype('uint8')).convert('RGB'))  # 转换为 PIL.Image 格式，以便 preprocess() 处理
 
-            img_variable = torch.autograd.Variable(image_crop.reshape(3, 224, 224).unsqueeze(0).to(device))
+            img_variable = torch.autograd.Variable(image_crop.reshape(3, 224, 224).unsqueeze(0).to(self.device))
 
             # 凭借patchs
             patchs_cuda = torch.cat((patchs_cuda, img_variable), 0)
@@ -554,7 +601,7 @@ class ImageTrain:
             # compute output
             output_global, fm_global, pool_global = self.cnn_model(imgs)
 
-            patchs_var = self.Attention_gen_patchs(imgs, fm_global, self.device)
+            patchs_var = self.Attention_gen_patchs(imgs, fm_global)
 
             output_local, _, pool_local = self.aux_model(patchs_var)
             # print(fusion_var.shape)
@@ -581,3 +628,110 @@ class ImageTrain:
                             "lr = {:.5f}, cnn_lr = {:.5f}" \
                 .format(train_loss, med_loss, caption_loss,
                         self.rnn_NoamOpt.optimizer.param_groups[0]['lr'], self.opt.cnn_learning_rate)
+
+    def load_best_model(self):
+        try:
+            best_model_path = os.path.join(self.best_model_path, 'best_model.pth')
+            best_cnn_model_path = os.path.join(self.best_model_path, 'best_cnn_model.pth')
+
+            model = torch.load(best_model_path)
+            new_model_state = modify_state_dict(model)
+            cnn_model = torch.load(best_cnn_model_path)
+            new_cnn_model_state = modify_state_dict(cnn_model)
+            self.model.load_state_dict(new_model_state)
+            self.cnn_model.load_state_dict(new_cnn_model_state)
+            print("load best model successfully")
+        except Exception as e:
+            print("fail to load best model")
+
+    def test(self):
+        self.load_best_model()
+
+        tqdm_bar = tqdm(self.dataloader['test'], desc="Testing")
+        self.set_model_eval()
+
+        num_show = 0
+
+        id2findings_t = {}  # true
+        id2findings_g = {}  # generated
+
+        id2captions_t = {}
+        id2captions_g = {}
+
+        gt = torch.FloatTensor().to(self.device)
+        pred = torch.FloatTensor().to(self.device)
+
+        count = 0
+        results = {}
+        with torch.no_grad():
+            for iteration, (ids, image_ids, imgs, input_ids, lm_labels, medterm_labels) in enumerate(tqdm_bar):
+                # imgs = [[img.to(device) for img in sample] for sample in imgs]
+                imgs = imgs.to(self.device)
+                medterm_labels = medterm_labels.to(self.device)
+
+                output_global, fm_global, pool_global = self.cnn_model(imgs)
+
+                patchs_var = self.Attention_gen_patchs(imgs, fm_global)
+
+                output_local, _, pool_local = self.aux_model(patchs_var)
+                # print(fusion_var.shape)
+                output_fusion = self.fusion_model(pool_global, pool_local)
+
+                med_porbs, findings_seq = self.model(att_feats=output_fusion, mode='inference', input_type='img')
+                findings_samples = self.decode_transformer_findings(findings_seq)
+                findings_truths = self.decode_transformer_findings(lm_labels)
+                # print("label", lm_labels)
+                # print(lm_labels)
+                # print("truth", findings_truths)
+                # print("samples", findings_samples)
+                sample = {}
+                # sample['label'] = lm_labels
+                sample['image_id'] = image_ids
+                sample['truth'] = findings_truths
+                sample['samples'] = findings_samples
+                # print(np.size(medterm_labels.cpu().data.numpy()), med_porbs.cpu().data.numpy())
+                # sample['medterm_labels'] = list(medterm_labels.cpu().numpy())
+                # sample['med_porbs'] = list(med_porbs.cpu().numpy())
+
+                if len(sample['samples']) > 512:
+                    sample['samples'] = sample['samples'][:511]
+                results[iteration] = sample
+
+                for i, ix in enumerate(image_ids):
+                    if ix not in id2findings_t:
+                        id2findings_t[ix] = []
+                        id2findings_g[ix] = [findings_samples[i]]
+
+                        id2captions_t[ix] = []
+                        if len(findings_samples[i]) > 512:
+                            findings_samples[i] = findings_samples[i][:511]
+                        id2captions_g[ix] = [findings_samples[i]]
+
+                    id2findings_t[ix].append(findings_truths[i])
+                    id2captions_t[ix] = [findings_truths[i]]
+
+                    if num_show < 10:
+                        print(json.dumps(id2captions_g[ix], ensure_ascii=False))
+                        # print(json.dumps(id2captions_t[ix], ensure_ascii=False))
+                        num_show += 1
+
+                if count % 100 == 0:
+                    print(count)
+                count += 1
+
+                pred = torch.cat((pred, med_porbs.data), 0)
+                gt = torch.cat((gt, medterm_labels), 0)
+
+        print('Total image to be evaluated %d' % (len(id2captions_t)))
+
+        lang_stats = None
+        if self.opt.language_eval == 1:
+            lang_stats = eval_utils.evaluate(id2captions_t, id2captions_g, save_to='./results/',
+                                             split='test_graph_pretrain')
+
+        AUROCs = compute_AUCs(gt, pred)
+        AUROCs = np.array(AUROCs)
+        AUROC_avg = AUROCs.mean()
+        print('The average AUROC is {AUROC_avg:.3f}'.format(AUROC_avg=AUROC_avg), len(AUROCs))
+
+        return lang_stats

@@ -79,13 +79,13 @@ def copy_every_model_to_avail_cuda(model_list, device):
 def init_abstract_loader(dataprocessor):
     text_train_dataset, text_train_loader = init_text_dataset(dataprocessor, 'train')
     text_val_dataset, text_val_loader = init_text_dataset(dataprocessor, 'valid')
-    text_test_dataset, text_test_loader = init_text_dataset(dataprocessor, 'train')
+    text_test_dataset, text_test_loader = init_text_dataset(dataprocessor, 'test')
     return [text_train_loader, text_val_loader, text_test_loader]
 
 def init_image_loader(dataprocessor):
     img_train_dataset, img_train_loader = init_image_dataset(dataprocessor, 'train')
     img_valid_dataset, img_valid_loader = init_image_dataset(dataprocessor, 'valid')
-    img_test_dataset, img_test_loader = init_image_dataset(dataprocessor, 'train')
+    img_test_dataset, img_test_loader = init_image_dataset(dataprocessor, 'test')
     return ([img_train_loader, img_valid_loader, img_test_loader],
             [img_train_dataset, img_valid_dataset, img_test_dataset])
 
@@ -104,7 +104,7 @@ if __name__ == '__main__':
 
     # 创建外部辅助信号训练处理类
     abstract_train = TextTrainProcess(device, opt, text_loader_list, model)
-    abstract_train.train()
+    # abstract_train.train()
 
     # 创建图像数据集
     image_loader_list, image_dataset_list = init_image_loader(dataprocessor)
@@ -113,4 +113,9 @@ if __name__ == '__main__':
     other_model = [cnn_model, aux_model, fusion_model]
     image_train = ImageTrain(device, opt, image_loader_list, image_dataset_list, model, other_model)
     image_train.train()
+
+    # test
+    image_train.test()
+
+
 
