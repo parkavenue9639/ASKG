@@ -104,7 +104,7 @@ if __name__ == '__main__':
 
     # 创建外部辅助信号训练处理类
     abstract_train = TextTrainProcess(device, opt, text_loader_list, model)
-    # abstract_train.train()
+    abstract_train.train()
 
     # 创建图像数据集
     image_loader_list, image_dataset_list = init_image_loader(dataprocessor)

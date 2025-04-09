@@ -97,9 +97,10 @@ class TextTrainProcess:
             print("No valid checkpoint found. Starting training from scratch.")
 
     def init_loss_func(self):
-        # 主要用于二分类
-        self.med_crit = nn.BCELoss().to(self.device)
-        # 主要用于多分类
+        # 主要用于二分类：术语预测
+        self.med_crit = nn.BCEWithLogitsLoss().to(self.device)
+        # self.med_crit = nn.BCELoss().to(self.device)
+        # 主要用于多分类任务：摘要生成， 跳过padding等无效token
         self.outputs_crit = nn.CrossEntropyLoss(ignore_index=-1).to(self.device)
 
         self.rnn_NoamOpt = NoamOpt(self.opt.d_model, self.opt.factor, self.opt.warmup,
@@ -121,7 +122,11 @@ class TextTrainProcess:
 
             caption_loss = self.outputs_crit(abstracts_outputs.view(-1, abstracts_outputs.size(-1)),
                                              abstracts_labels.view(-1))
-            loss = 2.0 * med_loss + caption_loss
+
+            # 动态调整
+            alpha = caption_loss.item() / (med_loss.item() + 1e-6)
+            loss = alpha * med_loss + caption_loss
+            # loss = 2.0 * med_loss + caption_loss
             loss.backward()
 
             nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.grad_clip)
@@ -135,58 +140,36 @@ class TextTrainProcess:
                         self.rnn_NoamOpt.optimizer.param_groups[0]['lr'], self.opt.cnn_learning_rate)
 
     def eval(self):
-        tqdm_bar = tqdm(self.dataloader['valid'], desc="Evaluating")
         self.model.eval()
+        tqdm_bar = tqdm(self.dataloader['valid'], desc="Evaluating Sentence Classification")
 
-        eval_loss = 0.0
-        total_samples = 0
-        correct_predictions = 0
-
-        all_labels = []
+        total_loss = 0.0
         all_preds = []
+        all_labels = []
+
         with torch.no_grad():
-            for iteration, (ids, abstracts, abstracts_labels, medterm_labels) in enumerate(tqdm_bar):
+            for ids, abstracts, abstracts_labels, medterm_labels in tqdm_bar:
                 abstracts = abstracts.to(self.device)
-                abstracts_labels = abstracts_labels.to(self.device)
-                # print("abstracts_labels shape: {}".format(abstracts_labels.shape))  # [16, 300]
-                # print("abstracts_labels type: {}".format(abstracts_labels.type))  # Tensor object
+                medterm_labels = medterm_labels.to(self.device)
 
-                # 前向传播
-                med_probs, abstracts_outputs = self.model(att_feats=abstracts, input_ids=abstracts,
-                                                          input_type='sentence')
+                tag_logits, _ = self.model(att_feats=abstracts, input_ids=abstracts, input_type='sentence')
 
-                loss = self.outputs_crit(abstracts_outputs.view(-1, abstracts_outputs.size(-1)),
-                                         abstracts_labels.view(-1))
-                preds = torch.argmax(med_probs, dim=-1)  # 多分类预测类别
+                loss = self.outputs_crit(tag_logits, medterm_labels)
+                total_loss += loss.item()
 
-                eval_loss += loss.item()
-                total_samples += abstracts.size(0)
+                # Apply sigmoid to get probabilities
+                probs = torch.sigmoid(tag_logits)  # [B, num_labels]
+                preds = (probs > 0.5).int().cpu().numpy()  # Convert to 0/1
 
-                # 收集预测与标签
-                '''all_labels.extend(abstracts_labels.cpu().numpy().tolist())
-                all_preds.extend(preds.cpu().numpy().tolist())'''
+                all_preds.extend(preds.tolist())
+                all_labels.extend(medterm_labels.int().cpu().numpy().tolist())
 
-                # 获取预测类别标签
-                _, predicted = torch.max(abstracts_outputs, dim=-1)
-                # print("predicted shape: {}".format(predicted.shape))  # [16, 300]
-                # print("predicted type: {}".format(predicted.type))  # Tensor object
-                if not isinstance(predicted, torch.Tensor):
-                    predicted = torch.tensor(predicted)
+        avg_loss = total_loss / len(self.dataloader['valid'])
+        micro_f1 = f1_score(all_labels, all_preds, average='micro')
+        acc = accuracy_score(all_labels, all_preds)
 
-                if not isinstance(abstracts_labels, torch.Tensor):
-                    abstracts_labels = torch.tensor(abstracts_labels)
-
-                # 计算准确率
-                correct_predictions += (predicted == abstracts_labels).sum().item()
-                total_samples += abstracts_labels.size(0)
-
-            # 计算平均损失
-            avg_loss = eval_loss / total_samples
-            # accuracy = accuracy_score(all_labels, all_preds)
-            # macro_f1 = f1_score(all_labels, all_preds, average='macro')
-            accuracy = correct_predictions / total_samples
-            print("Eval Loss: {} | Accuracy: {} | Macro F1: NA".format(avg_loss, accuracy))
-            return accuracy
+        print(f"[Sentence Classification] Loss: {avg_loss:.4f} | Accuracy: {acc:.4f} | Macro F1: {micro_f1:.4f}")
+        return micro_f1
 
     def free_cache(self):
         if self.device.type == 'mps':
@@ -384,7 +367,7 @@ class ImageTrain:
                 # print("fm_global shape:{}".format(fm_global.shape))  # [16, 1024, 7, 7]
                 # print("pool_global shape:{}".format(pool_global.shape))  # [16, 1024]
 
-                patchs_var = self.Attention_gen_patchs(imgs, fm_global, self.device)  # 局部特征提取
+                patchs_var = self.Attention_gen_patchs(imgs, fm_global)  # 局部特征提取
                 # print("patchs_var shape:{}".format(patchs_var.shape))  # [16, 3, 224, 224]
 
                 output_local, _, pool_local = self.aux_model(patchs_var)  # 辅助模型提取局部特征：局部输出、局部特征池化
