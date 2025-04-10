@@ -74,7 +74,22 @@ class CHXrayDataSet2(Dataset):
         return len(self.ids)
 
     def checkdata(self):
-        """打印各种数据的前三个元素的类型、长度和元素内容"""
+        """打印数据集结构，并解码 findings_labels 与 medterms 的前几个样本"""
+
+        def decode_sequence(seq):
+            """根据模型解码规则，将一个 token ID 序列解码成字符串"""
+            words = []
+            for token_id in seq:
+                if token_id < 0:
+                    continue
+                token = self.idw2word.get(token_id, '<UNK>')
+                if token in ['<BOS>', '<BLANK>', '<UNK>']:
+                    continue
+                if token == '<EOS>':
+                    break
+                words.append(token)
+            return ' '.join(words)
+
         data_attrs = {
             'findings': self.findings,
             'findings_labels': self.findings_labels,
@@ -86,16 +101,28 @@ class CHXrayDataSet2(Dataset):
         }
 
         for attr_name, attr_value in data_attrs.items():
-            print(f"\nChecking {attr_name}:")
+            print(f"\n🧩 Checking {attr_name}:")
+
             if isinstance(attr_value, dict):
                 sample_keys = list(attr_value.keys())[:5]
                 for key in sample_keys:
-                    print(
-                        f"  Key: {key} | Type: {type(attr_value[key])} | Length: {len(attr_value[key]) if hasattr(attr_value[key], '__len__') else 'N/A'} | Value: {attr_value[key]}")
+                    val = attr_value[key]
+                    val_len = len(val) if hasattr(val, '__len__') else 'N/A'
+                    if attr_name in ['findings_labels', 'medterms']:
+                        decoded = decode_sequence(val)
+                        print(f"  Key: {key} | Type: {type(val)} | Length: {val_len} | Decoded: {decoded}")
+                    else:
+                        print(f"  Key: {key} | Type: {type(val)} | Length: {val_len} | Value: {val}")
+
             elif isinstance(attr_value, list):
                 for i, elem in enumerate(attr_value[:3]):
-                    print(
-                        f"  Index {i} | Type: {type(elem)} | Length: {len(elem) if hasattr(elem, '__len__') else 'N/A'} | Value: {elem}")
+                    val_len = len(elem) if hasattr(elem, '__len__') else 'N/A'
+                    if attr_name in ['findings_labels', 'medterms']:
+                        decoded = decode_sequence(elem)
+                        print(f"  Index {i} | Type: {type(elem)} | Length: {val_len} | Decoded: {decoded}")
+                    else:
+                        print(f"  Index {i} | Type: {type(elem)} | Length: {val_len} | Value: {elem}")
+
             else:
-                print(
-                    f"  Type: {type(attr_value)} | Length: {len(attr_value) if hasattr(attr_value, '__len__') else 'N/A'} | Sample Value: {attr_value}")
+                val_len = len(attr_value) if hasattr(attr_value, '__len__') else 'N/A'
+                print(f"  Type: {type(attr_value)} | Length: {val_len} | Sample Value: {attr_value}")

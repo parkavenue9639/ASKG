@@ -73,24 +73,40 @@ class Fh21Dataset(Dataset):
         return len(self.data)
 
     def check_data(self):
-        # 查看 data 的部分内容和结构
         print("Fh21Dataset Data 类型：", type(self.data))  # list
         if isinstance(self.data, list):
             print("Fh21Dataset Data 长度：", len(self.data))  # 29058
-            print("Fh21Dataset Data 示例（前 3 个元素）：", self.data[0])
-            # id, abstracts, labels, med_terms
-            # [(id, [x, x, x,...], [x, x, x,...], [med_terms]),
-            #  (id, [x, x, x,...], [x, x, x,...], [med_terms]),
-            #  ...]
+            print("Fh21Dataset Data 示例（前 1 个元素）：", self.data[0])
 
-        # 查看 word2idw 的部分内容和结构
-        print("Fh21Dataset word2idw 类型：", type(self.word2idw))  # dict
         print("Fh21Dataset word2idw 长度：", len(self.word2idw))
-        print("Fh21Dataset word2idw 示例（前 5 个词）：", dict(list(self.word2idw.items())[:5]))
-        #  {'<BLANK>': 0, '<BOS>': 2, '<EOS>': 3, '<UNK>': 1, '<NORMAL>': 4}
-
-        # 查看 word2idw 的部分内容和结构
-        print("Fh21Dataset idw2word 类型：", type(self.idw2word))  # dict
         print("Fh21Dataset idw2word 长度：", len(self.idw2word))
-        print("Fh21Dataset idw2word 示例（前 5 个词）：", dict(list(self.idw2word.items())[:5]))
+        print("词表示例：", dict(list(self.idw2word.items())[:5]))
+
+        print("\n🔍 解码前 3 条数据（abstracts）：")
+        for i, sample in enumerate(self.data[:3]):
+            image_id, abstract_ids, label_ids, medterm_ids = sample
+            decoded = self.decode_ids_with_transformer_logic([abstract_ids])[0]
+            print(f"\n Sample {i + 1}: Image ID = {image_id}")
+            print("  Raw IDs      :", abstract_ids)
+            print("  Decoded Text :", decoded)
+
+    def decode_ids_with_transformer_logic(self, batch_abstract_ids):
+        """
+        模拟模型解码逻辑，将一批 abstract ids（List[List[int]]）转换为字符串
+        """
+        decode_list = []
+        for abstract_ids in batch_abstract_ids:
+            words = []
+            for token_id in abstract_ids:
+                if token_id < 0:
+                    continue
+                token = self.idw2word.get(token_id, '<UNK>')
+                if token in ['<BOS>', '<BLANK>', '<UNK>']:
+                    continue
+                if token == '<EOS>':
+                    break
+                words.append(token)
+            decode_list.append(' '.join(words))
+        return decode_list
+
 

@@ -585,7 +585,7 @@ class ImageEncoderModel(OpenAIGPTPreTrainedModel):
     def __init__(self, config):
         super(ImageEncoderModel, self).__init__(config)
         # self.tag_decoder = tag_decoder
-        num_tokens = config.num_medterms
+        num_tokens = config.num_medterms  # 医学学术词汇表的大小
         self.tokens_embed = nn.Embedding(num_tokens, config.n_embd)
         self.drop = nn.Dropout(config.embd_pdrop)
         block = EncoderBlock(config.n_ctx, config, scale=True)
@@ -624,7 +624,6 @@ class ImageEncoderModel(OpenAIGPTPreTrainedModel):
             hidden_states = block(hidden_states, src)
         output_shape = input_shape + (hidden_states.size(-1),)
         return hidden_states.view(*output_shape)
-
 
 
 class SentenceEncoderModel(OpenAIGPTPreTrainedModel):
