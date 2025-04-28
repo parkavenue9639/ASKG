@@ -13,6 +13,7 @@ import torchvision.transforms as transforms
 from collections import OrderedDict
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import accuracy_score, f1_score
+from transformers import AutoTokenizer, AutoModel
 
 import eval_utils
 
@@ -139,6 +140,32 @@ class TextTrainProcess:
                 .format(train_loss, med_loss, caption_loss,
                         self.rnn_NoamOpt.optimizer.param_groups[0]['lr'], self.opt.cnn_learning_rate)
 
+    def decode_transformer_findings(self, sampled_findings):
+        decode_list = []
+        # print("Max ID in idw2word:", max(idw2word.keys()))
+        n_samples, n_words = sampled_findings.size()
+        # print("n_samples: {}  n_words: {}".format(n_samples, n_words)) [16, 300]
+
+        for n in range(n_samples):
+            decoded = []
+            words = []
+            # print(sampled_findings[n])
+            for i in range(n_words):
+                token_id = int(sampled_findings[n][i])
+                if token_id < 0:
+                    continue
+                token = self.dataset['train'].idw2word.get(token_id, '<UNK>')  # 避免 KeyError
+                if token == '<BOS>':
+                    continue
+                if token == '<EOS>':
+                    break
+                if token != '<UNK>' and token != '<BLANK>':
+                    words.append(token)
+            if len(words) != 0:
+                decoded.append(' '.join(words))
+            decode_list.append(' '.join(decoded))
+        return decode_list  # [batch_size, length]
+
     def eval(self):
         self.model.eval()
         tqdm_bar = tqdm(self.dataloader['valid'], desc="Evaluating Sentence Classification")
@@ -152,7 +179,21 @@ class TextTrainProcess:
                 abstracts = abstracts.to(self.device)
                 medterm_labels = medterm_labels.to(self.device)
 
-                tag_logits, _ = self.model(att_feats=abstracts, input_ids=abstracts, input_type='sentence')
+                tag_logits, abstract = self.model(att_feats=abstracts, input_ids=abstracts, input_type='sentence')
+                # 解码文本
+                findings_samples = self.decode_transformer_findings(abstract)
+                findings_truths = self.decode_transformer_findings(abstracts)
+
+                num_show = 0
+                # 打印前20个样本的预测结果，帮助观察模型效果
+                if num_show < 20:
+                    print("Pred:", findings_samples)
+                    print("True:", findings_truths)
+                    print('-' * 60)
+
+                    # print(json.dumps(id2captions_g[ix], ensure_ascii=False))
+                    # print(json.dumps(id2captions_t[ix], ensure_ascii=False))
+                    num_show += 1
 
                 loss = self.outputs_crit(tag_logits, medterm_labels)
                 total_loss += loss.item()
@@ -240,15 +281,20 @@ class ImageTrain:
         self.cnn_model = other_model[0]
         self.aux_model = other_model[1]
         self.fusion_model = other_model[2]
-        self.best_abstract_model_path = "../best_model/abstract"
-        self.checkpoint_path = '../checkpoint/image'
-        self.best_model_path = '../best_model/image'
+        
+        # 使用绝对路径
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.best_abstract_model_path = os.path.join(base_dir, 'best_model/abstract')
+        self.checkpoint_path = os.path.join(base_dir, 'checkpoint/image')
+        self.best_model_path = os.path.join(base_dir, 'best_model/image')
+        
         self.start_epoch = 0
         self.best_val_score = None
         self.med_crit = None
         self.outputs_crit = None
         self.rnn_NoamOpt = None
         self.cnn_optimizer = None
+        self.tokenizer = AutoTokenizer.from_pretrained("dmis-lab/biobert-base-cased-v1.1")
         self.normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225]
@@ -317,6 +363,8 @@ class ImageTrain:
             # print(sampled_findings[n])
             for i in range(n_words):
                 token_id = int(sampled_findings[n][i])
+                if token_id < 0:
+                    continue
                 token = self.dataset['train'].idw2word.get(token_id, '<UNK>')  # 避免 KeyError
                 if token == '<BOS>':
                     continue
@@ -328,6 +376,23 @@ class ImageTrain:
                 decoded.append(' '.join(words))
             decode_list.append(' '.join(decoded))
         return decode_list  # [batch_size, length]
+
+    def decode_with_tokenizer(self, sampled_findings):
+        """
+        使用 BioBERT tokenizer 进行 decode，确保不传入非法 token_id
+        """
+        if isinstance(sampled_findings, torch.Tensor):
+            sampled_findings = sampled_findings.tolist()
+
+        # 清洗每个序列里的 token_id，过滤掉 -1、None 等非法 ID
+        cleaned_sequences = []
+        for seq in sampled_findings:
+            cleaned_seq = [token_id for token_id in seq if
+                           isinstance(token_id, int) and 0 <= token_id < self.tokenizer.vocab_size]
+            cleaned_sequences.append(cleaned_seq)
+
+        decoded = self.tokenizer.batch_decode(cleaned_sequences, skip_special_tokens=True)
+        return decoded
 
     def set_model_eval(self):
         # 设置模型为eval模式，关闭drouptout
@@ -378,14 +443,19 @@ class ImageTrain:
 
                 # 医学术语预测概率、预测的文本序列
                 med_porbs, findings_seq = self.model(att_feats=output_fusion, mode='inference', input_type='img')
-                if len(findings_seq) > 512:
-                    findings_seq = findings_seq[:511]
+
+                # if len(findings_seq) > 512:
+                #    findings_seq = findings_seq[:511]
 
                 # 解码文本
                 findings_samples = self.decode_transformer_findings(findings_seq)
                 findings_truths = self.decode_transformer_findings(lm_labels)
                 # print("findings_samples :{}".format(findings_samples))
                 # print("findings_truths :{}".format(findings_truths))
+
+                # 使用tokenizer解码文本
+                # findings_samples = self.decode_with_tokenizer(findings_seq)
+                # findings_truths = self.decode_with_tokenizer(lm_labels)
 
                 # 存储预测结果
                 for i, ix in enumerate(image_ids):
@@ -403,8 +473,11 @@ class ImageTrain:
 
                     # 打印前20个样本的预测结果，帮助观察模型效果
                     if num_show < 20:
-                        print("{} id2findings_t[ix]".format(num_show))
-                        print(json.dumps(id2captions_g[ix], ensure_ascii=False))
+                        print("Pred:", findings_samples[i])
+                        print("True:", findings_truths[i])
+                        print('-' * 60)
+
+                        # print(json.dumps(id2captions_g[ix], ensure_ascii=False))
                         # print(json.dumps(id2captions_t[ix], ensure_ascii=False))
                         num_show += 1
 
@@ -439,6 +512,8 @@ class ImageTrain:
         self.init_loss_function()
         self.check_abstract_model()
         self.check_checkpoint()
+        # 测试eval
+        # current_score = self.eval()['CIDEr']
 
         for epoch in trange(self.start_epoch, int(self.opt.max_epochs), desc="Epoch"):
             try:
@@ -596,7 +671,10 @@ class ImageTrain:
 
             med_loss = self.med_crit(med_porbs, medterm_labels)
             caption_loss = self.outputs_crit(findings_outputs.view(-1, findings_outputs.size(-1)), lm_labels.view(-1))
-            loss = 2.0 * med_loss + caption_loss
+            # 动态调整
+            alpha = caption_loss.item() / (med_loss.item() + 1e-6)
+            loss = alpha * med_loss + caption_loss
+            # loss = 2.0 * med_loss + caption_loss
 
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.opt.grad_clip)
@@ -613,19 +691,19 @@ class ImageTrain:
                         self.rnn_NoamOpt.optimizer.param_groups[0]['lr'], self.opt.cnn_learning_rate)
 
     def load_best_model(self):
-        try:
-            best_model_path = os.path.join(self.best_model_path, 'best_model.pth')
-            best_cnn_model_path = os.path.join(self.best_model_path, 'best_cnn_model.pth')
+        # 使用绝对路径
+        best_model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                     'best_model/image/best_model.pth')
+        best_cnn_model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                         'best_model/image/best_cnn_model.pth')
 
-            model = torch.load(best_model_path)
-            new_model_state = modify_state_dict(model)
-            cnn_model = torch.load(best_cnn_model_path)
-            new_cnn_model_state = modify_state_dict(cnn_model)
-            self.model.load_state_dict(new_model_state)
-            self.cnn_model.load_state_dict(new_cnn_model_state)
-            print("load best model successfully")
-        except Exception as e:
-            print("fail to load best model")
+        model = torch.load(best_model_path)
+        new_model_state = modify_state_dict(model)
+        cnn_model = torch.load(best_cnn_model_path)
+        new_cnn_model_state = modify_state_dict(cnn_model)
+        self.model.load_state_dict(new_model_state)
+        self.cnn_model.load_state_dict(new_cnn_model_state)
+        print("load best model successfully")
 
     def test(self):
         self.load_best_model()

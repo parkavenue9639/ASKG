@@ -10,8 +10,9 @@ from sklearn.model_selection import train_test_split
 class Fh21Dataset(Dataset):
     def __init__(self, opt, split='train'):
         
-        # TODO
-        self.data_dir = '../data/processed_fh21_precise_tag/'
+        # 使用绝对路径
+        self.data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                    'data/processed_fh21_precise_tag')
         self.num_medterm = opt.num_medterm  # 指定医学术语的数量
 
         # 读取pkl文件，该文件是一个pickel序列化的文件，存储了数据集的主要内容

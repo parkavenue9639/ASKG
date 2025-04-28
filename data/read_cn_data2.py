@@ -12,8 +12,9 @@ class CHXrayDataSet2(Dataset):
         self.transform = transform
 
         self.data_dir = opt.data_dir
-        # TODO
-        self.pkl_dir = '../data/processed_chxray_precise_tag/'
+        # 使用绝对路径
+        self.pkl_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                   'data/processed_chxray_precise_tag')
         self.img_dir = os.path.join(self.data_dir, 'NLMCXR_png')
 
         self.num_medterm = opt.num_medterm  # 指定医学术语的数量
@@ -101,7 +102,7 @@ class CHXrayDataSet2(Dataset):
         }
 
         for attr_name, attr_value in data_attrs.items():
-            print(f"\n🧩 Checking {attr_name}:")
+            print(f"\n Checking {attr_name}:")
 
             if isinstance(attr_value, dict):
                 sample_keys = list(attr_value.keys())[:5]

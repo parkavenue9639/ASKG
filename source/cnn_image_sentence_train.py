@@ -36,22 +36,25 @@ def set_device():
 def parse_args():
     options = opts.parse_opt()
     print(options)
-    config_json = OpenAIGPTConfig('../pretrain/config/cn_precise_config.json')
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                             'pretrain/config/cn_precise_config.json')
+    config_json = OpenAIGPTConfig(config_path)
     options.vocab_size = config_json.vocab_size  # 26916
     return options, config_json
 
 
 def init_tag_decoder(conf):
-    with open(conf.tag_decoderdir, 'rb') as f:
-        # data/processed_fh21_precise_tag/tagdecoder.pkl
+    tag_decoder_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                   'data/processed_fh21_precise_tag/tagdecoder.pkl')
+    with open(tag_decoder_path, 'rb') as f:
         decoder = pickle.load(f)
     return decoder
 
 
 def init_model(tag_decoder, device, opt, config):
-
-    cnn_model = Densenet121_AG(pretrained=False, num_classes=opt.num_medterm).to(device)
-    aux_model = Densenet121_AG(pretrained=False, num_classes=opt.num_medterm).to(device)
+    # 确保分类器维度正确
+    cnn_model = Densenet121_AG(pretrained=False, num_classes=50176).to(device)
+    aux_model = Densenet121_AG(pretrained=False, num_classes=50176).to(device)
     fusion_model = Fusion_Branch(input_size=1024, output_size=opt.num_medterm, device=device).to(device)
     model = SentenceLMHeadModel(tag_decoder, config, device=device).to(device)
     return cnn_model, aux_model, fusion_model, model

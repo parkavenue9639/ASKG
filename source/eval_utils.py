@@ -9,12 +9,14 @@ from bert_score import score as BERTSCORE
 
 
 import sys
+import os
 
-sys.path.append('./pycocoevalcap')
+# 添加当前目录到系统路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from bleu.bleu import Bleu
-from rouge.rouge import Rouge
-from cider.cider import Cider
+from pycocoevalcap.bleu.bleu import Bleu
+from pycocoevalcap.rouge.rouge import Rouge
+from pycocoevalcap.cider.cider import Cider
 
 # from meteor.meteor import Meteor
 
